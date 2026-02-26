@@ -10,6 +10,8 @@ import urllib
 import shutil
 import datetime
 
+import torch
+
 import asleep.sleep_windows as sw
 from asleep.utils import data_long2wide, read, NpEncoder
 from asleep.sleepnet import start_sleep_net
@@ -235,12 +237,51 @@ def get_sleep_windows(data2model, times, non_wear, args):
         master_npids
 
 
+def download_models(force_download=False):
+    """Download all required model files without processing any data."""
+    import asleep.sslmodel as sslmodel
+
+    # 1. SSL sleep-window detector weights (ssl.joblib.lzma)
+    model_path = os.path.join(pathlib.Path(__file__).parent, "ssl.joblib.lzma")
+    pth = pathlib.Path(model_path)
+    if force_download or not pth.exists():
+        url = "https://github.com/OxWearables/asleep/releases/download/0.4.12/ssl.joblib.lzma"
+        print(f"Downloading {url}...")
+        with urllib.request.urlopen(url) as f_src, open(pth, "wb") as f_dst:
+            shutil.copyfileobj(f_src, f_dst)
+        print(f"Saved to {pth}")
+    else:
+        print(f"SSL model already cached: {pth}")
+
+    # 2. ssl-wearables repo via torch.hub (harnet30 architecture)
+    #    Side effect: calls torch.hub.set_dir() pointing to package's torch_hub_cache/
+    print("Caching ssl-wearables repository...")
+    sslmodel.get_sslnet(tag='v1.0.0', pretrained=False)
+
+    # 3. asleep repo + SleepNet CNN-LSTM weights via torch.hub
+    #    torch.hub.set_dir was set in step 2, so repo + weights land in torch_hub_cache/
+    #    Parameters must match the pretrained weights (config_eval: cnn_lstm_eval + deployment)
+    print("Caching SleepNet repository and weights...")
+    torch.hub.load(
+        'OxWearables/asleep', 'sleepnet',
+        num_classes=5, lstm_nn_size=1024, lstm_layer=2,
+        dropout_p=0, bi_lstm=True,
+        trust_repo=True)
+
+    print("All models downloaded successfully.")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="A tool to estimate sleep stages from accelerometer data",
         add_help=True
     )
-    parser.add_argument("filepath", help="Enter file to be processed")
+    parser.add_argument("filepath", nargs='?', default=None,
+                        help="Enter file to be processed")
+    parser.add_argument(
+        "--download-models",
+        action="store_true",
+        help="Download all model files and exit. No input file needed.")
     parser.add_argument(
         "--outdir",
         "-o",
@@ -298,6 +339,13 @@ def main():
              "the current device time. e.g. +1 or -1",
         default="0")
     args = parser.parse_args()
+
+    if args.download_models:
+        download_models(force_download=args.force_download)
+        return
+
+    if args.filepath is None:
+        parser.error("filepath is required (unless using --download-models)")
 
     resample_hz = 30
 
