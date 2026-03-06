@@ -97,10 +97,13 @@ def setup_dataset(X, pid, cfg, is_train=False):
 def config_device(cfg):
     if cfg.gpu != 'cpu':
         my_device = str(cfg.gpu)
-        print("pytorch device: " + my_device)
     else:
-        my_device = "cpu"
-        print("pytorch device defaulting to 'cpu'")
+        import torch
+        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            my_device = 'mps'
+        else:
+            my_device = 'cpu'
+    print("pytorch device: " + my_device)
     return my_device
 
 

@@ -187,7 +187,7 @@ def get_sleep_windows(data2model, times, non_wear, args):
             "ssl.joblib.lzma")
         sleep_window_detector = load_model(
             model_path, force_download=args.force_download)
-        sleep_window_detector.device = 'cpu'  # expect channel last
+        sleep_window_detector.device = args.pytorch_device  # expect channel last
         data_channel_last = np.swapaxes(data2model, 1, -1)
         window_pred = sleep_window_detector.predict(data_channel_last)
         sleep_prediction[~non_wear] = window_pred
@@ -309,9 +309,10 @@ def main():
     parser.add_argument(
         "--pytorch_device",
         "-d",
-        help="Pytorch device to use, e.g.: 'cpu' or 'cuda:0' (for SSL only)",
+        help="Pytorch device to use, e.g.: 'cpu' or 'cuda:0'. "
+             "Default: 'mps' if available, otherwise 'cpu'",
         type=str,
-        default='cpu')
+        default=None)
     parser.add_argument(
         "--model_weight_path",
         "-w",
@@ -343,6 +344,11 @@ def main():
     if args.download_models:
         download_models(force_download=args.force_download)
         return
+
+    if args.pytorch_device is None:
+        import torch
+        args.pytorch_device = 'mps' if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available() else 'cpu'
+    print(f"Using pytorch device: {args.pytorch_device}")
 
     if args.filepath is None:
         parser.error("filepath is required (unless using --download-models)")
