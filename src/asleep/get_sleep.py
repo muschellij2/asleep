@@ -347,7 +347,8 @@ def main():
 
     if args.pytorch_device is None:
         import torch
-        args.pytorch_device = 'mps' if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available() else 'cpu'
+        mps_available = hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()
+        args.pytorch_device = 'mps' if mps_available else 'cpu'
     print(f"Using pytorch device: {args.pytorch_device}")
 
     if args.filepath is None:
