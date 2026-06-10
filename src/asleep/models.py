@@ -103,7 +103,7 @@ class SleepWindowSSL:
         hmm_params = hmm_params or dict()
         self.hmms = hmm_utils.HMMSmoother(**hmm_params)
 
-    def fit(self, X, Y, groups=None, num_workers=1):
+    def fit(self, X, Y, groups=None, num_workers=0):
         sslmodel.verbose = self.verbose
 
         if self.verbose:
@@ -177,7 +177,7 @@ class SleepWindowSSL:
 
         return self
 
-    def predict(self, X, groups=None, num_workers=1):
+    def predict(self, X, groups=None, num_workers=0):
         sslmodel.verbose = self.verbose
 
         dataset = sslmodel.NormalDataset(X, name='prediction')
