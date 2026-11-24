@@ -26,6 +26,17 @@ $ java -version
 $ pip install asleep
 ```
 
+# Development checks
+
+Install the development dependencies and run the same quality gates used by tox:
+
+```bash
+$ pip install -e '.[dev,test]'
+$ ruff check .
+$ mypy
+$ pytest
+```
+
 # Usage
 All the processing will be much faster after the first time because the model weights will to have to be downloaded
 the first time that the package is used.
@@ -113,3 +124,7 @@ If you want to use our package for your project, please cite our paper below:
 We would like to thank all our code contributors, manuscript co - authors, and research participants for their help in making this work possible. The
 data processing pipeline of this repository is based on the [step_count](https://github.com/OxWearables/stepcount) package from our group. Special
 thanks to @chanshing for his help in developing the package.
+
+# Maintainer documentation
+
+See [RELEASING.md](RELEASING.md) for the package release process.

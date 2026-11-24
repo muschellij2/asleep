@@ -1,6 +1,13 @@
+from __future__ import annotations
+
+from os import PathLike
+from typing import Any, Dict, Tuple, Union
+from importlib.metadata import version
+
 import pathlib
 import argparse
 import numpy as np
+from numpy.typing import NDArray
 import pandas as pd
 import json
 import os
@@ -11,7 +18,6 @@ import shutil
 import datetime
 
 import torch
-from importlib.metadata import version
 
 import asleep.sleep_windows as sw
 from asleep.utils import data_long2wide, read, NpEncoder
@@ -41,9 +47,12 @@ NON_WEAR_PREDICTION_FLAG = -1
 
 START_TIME_IDX = 0
 END_TIME_IDX = -1
+Array = NDArray[Any]
 
 
-def load_model(model_path, force_download=False):
+def load_model(
+    model_path: Union[str, PathLike[str]], force_download: bool = False
+) -> Any:
     """ Load trained model. Download if not exists. """
 
     pth = pathlib.Path(model_path)
@@ -59,7 +68,12 @@ def load_model(model_path, force_download=False):
     return joblib.load(pth)
 
 
-def get_parsed_data(raw_data_path, info_data_path, resample_hz, args):
+def get_parsed_data(
+    raw_data_path: Union[str, PathLike[str]],
+    info_data_path: Union[str, PathLike[str]],
+    resample_hz: Union[int, float],
+    args: argparse.Namespace,
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     time_shift = 0
     if args.time_shift != '0':
         if args.time_shift[0] == '-':
@@ -70,7 +84,9 @@ def get_parsed_data(raw_data_path, info_data_path, resample_hz, args):
     # add the time shift to the parsed data frame
     if os.path.exists(raw_data_path) is False or os.path.exists(
             info_data_path) is False or args.force_run is True:
-        data, info = read(args.filepath, resample_hz, sample_rate=args.sample_rate)
+        data, info = read(
+            args.filepath, resample_hz, sample_rate=getattr(args, 'sample_rate', None)
+        )
         # data will have the following columns:
         # time, x, y, z, non_wear
         data = data.reset_index()
@@ -87,25 +103,28 @@ def get_parsed_data(raw_data_path, info_data_path, resample_hz, args):
 
         pathlib.Path(args.outdir).mkdir(parents=True, exist_ok=True)
         data.to_csv(raw_data_path)
-        with open(info_data_path, 'w', encoding='utf-8') as f:
-            json.dump(info, f, ensure_ascii=False, indent=4, cls=NpEncoder)
         print("Raw data file saved to: {}".format(raw_data_path))
-        print("Info data file saved to: {}".format(info_data_path))
     else:
         print("Raw data file already exists. Skipping raw data parsing.")
         data = pd.read_csv(raw_data_path)
         with open(info_data_path, 'r') as f:
             info = json.load(f)
+
+    info['AsleepVersion'] = version('asleep')
+    with open(info_data_path, 'w', encoding='utf-8') as f:
+        json.dump(info, f, ensure_ascii=False, indent=4, cls=NpEncoder)
+    print("Info data file saved to: {}".format(info_data_path))
     print(data.head())
     return data, info
 
 
 def transform_data2model_input(
-        data2model_path,
-        times_path,
-        non_wear_path,
-        data,
-        args):
+        data2model_path: Union[str, PathLike[str]],
+        times_path: Union[str, PathLike[str]],
+        non_wear_path: Union[str, PathLike[str]],
+        data: pd.DataFrame,
+        args: argparse.Namespace,
+) -> Tuple[Array, Array, Array]:
     """
     Current:
                                    x         y         z          non_wear
@@ -153,7 +172,7 @@ def transform_data2model_input(
     return data2model, times, non_wear
 
 
-def mean_temp_and_light(data):
+def mean_temp_and_light(data: pd.DataFrame) -> Tuple[Array, Array]:
     # It stops processing if data does not include temperature and light columns
     if not {'temperature', 'light'}.issubset(data.columns):
         sys.exit('There is no temperature and light columns in the raw data.')
@@ -173,7 +192,9 @@ def mean_temp_and_light(data):
     return temp, light
 
 
-def get_sleep_windows(data2model, times, non_wear, args):
+def get_sleep_windows(
+    data2model: Array, times: Array, non_wear: Array, args: argparse.Namespace
+) -> Tuple[Array, pd.DataFrame, pd.DataFrame, Array, Array]:
     # data2model: N x 3 x 900
     # non_wear_flag: N x 1
     # TODO: only inference on the periods when non-wear is false
@@ -190,11 +211,9 @@ def get_sleep_windows(data2model, times, non_wear, args):
             model_path, force_download=args.force_download)
         sleep_window_detector.device = args.pytorch_device  # expect channel last
         data_channel_last = np.swapaxes(data2model, 1, -1)
-        num_workers = getattr(args, 'num_workers', 0)
-        if num_workers is None:
-            num_workers = 0
         window_pred = sleep_window_detector.predict(
-            data_channel_last, num_workers=num_workers)
+            data_channel_last, num_workers=getattr(args, 'num_workers', 0)
+        )
         sleep_prediction[~non_wear] = window_pred
         print(sleep_prediction.shape)
         print(np.unique(sleep_prediction, return_counts=True))
@@ -242,7 +261,7 @@ def get_sleep_windows(data2model, times, non_wear, args):
         master_npids
 
 
-def download_models(force_download=False):
+def download_models(force_download: bool = False) -> None:
     """Download all required model files without processing any data."""
     import asleep.sslmodel as sslmodel
 
@@ -276,7 +295,7 @@ def download_models(force_download=False):
     print("All models downloaded successfully.")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="A tool to estimate sleep stages from accelerometer data",
         add_help=True
@@ -352,8 +371,8 @@ def main():
     parser.add_argument(
         "--sample_rate",
         type=int,
-        help="The sample rate of the data. If None, will estimate it.",
-        default=None)    
+        help="The sample rate of CSV or pickle input. If omitted, it is inferred.",
+        default=None)
     args = parser.parse_args()
 
     if args.download_models:
@@ -387,14 +406,10 @@ def main():
 
     # 1. Parse raw files into a dataframe
     # Add non-wear detection
-    info = {}
-    info['AsleepVersion'] = version('asleep')
-
-    data, info_read = get_parsed_data(
+    data, info = get_parsed_data(
         raw_data_path, info_data_path, resample_hz, args)
     if args.remove_intermediate_files:
         os.remove(raw_data_path)
-    info.update(info_read)
 
     # 1.1 Transform data into a usable format for inference
     data2model, times, non_wear = transform_data2model_input(
@@ -502,10 +517,12 @@ def main():
     summarize_daily_sleep(day_summary_df, output_json_path, args.min_wear)
 
 
-def get_master_df(block_time_df, times, acc_array):
+def get_master_df(
+    block_time_df: pd.DataFrame, times: Array, acc_array: Array
+) -> Tuple[Array, Array]:
     # extract interval based on times
-    master_acc = []
-    master_npids = []  # night ids
+    master_acc = np.empty((0, *acc_array.shape[1:]), dtype=acc_array.dtype)
+    master_npids = np.empty(0)  # night ids
 
     for index, row in block_time_df.iterrows():
         start_t = row["start"]
@@ -516,12 +533,8 @@ def get_master_df(block_time_df, times, acc_array):
 
         day_pid = np.ones(np.sum(time_filter)) * index
 
-        if len(master_npids) == 0:
-            master_acc = current_day_acc
-            master_npids = day_pid
-        else:
-            master_acc = np.concatenate((master_acc, current_day_acc))
-            master_npids = np.concatenate((master_npids, day_pid))
+        master_acc = np.concatenate((master_acc, current_day_acc))
+        master_npids = np.concatenate((master_npids, day_pid))
 
     return master_acc, master_npids
 
